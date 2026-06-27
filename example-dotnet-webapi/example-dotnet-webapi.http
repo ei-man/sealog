@@ -1,0 +1,11 @@
+@example_dotnet_webapi_HostAddress = http://localhost:5056
+
+GET {{example_dotnet_webapi_HostAddress}}/
+Accept: application/json
+
+###
+
+GET {{example_dotnet_webapi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

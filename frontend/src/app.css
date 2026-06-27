@@ -1,21 +1,68 @@
 :root {
   color-scheme: light;
-  --bg: #ffffff;
-  --panel: #f6f8fa;
-  --text: #1f2328;
-  --muted: #656d76;
-  --border: #d0d7de;
-  --hover: #f3f4f6;
+
+  /* Base colors - warmer undertones */
+  --bg: #fefefe;
+  --panel: #f8f9fa;
+  --panel-elevated: #ffffff;
+  --text: #24292f;
+  --text-secondary: #57606a;
+  --muted: #6e7781;
+
+  /* Borders - softer appearance */
+  --border: #d8dee4;
+  --border-subtle: #e8ecf0;
+
+  /* Interactive states */
+  --hover: #f3f5f7;
+  --hover-subtle: #f6f8fa;
   --selected: #ddf4ff;
+  --selected-border: #b6e3ff;
+
+  /* Accent colors */
   --blue: #0969da;
+  --blue-light: #ddf4ff;
+  --blue-muted: rgba(9, 105, 218, 0.08);
   --red: #cf222e;
-  --orange: #bc4c00;
+  --red-light: #ffebe9;
+  --orange: #bf8700;
+  --orange-light: #fff8c5;
+  --green: #1a7f37;
   --gray: #8c959f;
+
+  /* Shadows for depth */
+  --shadow-sm: 0 1px 2px rgba(31, 35, 40, 0.04);
+  --shadow-md: 0 3px 6px rgba(31, 35, 40, 0.06), 0 1px 3px rgba(31, 35, 40, 0.04);
+  --shadow-lg: 0 8px 24px rgba(31, 35, 40, 0.12);
+  --shadow-focus: 0 0 0 3px rgba(9, 105, 218, 0.15);
+
+  /* Transitions */
+  --transition-fast: 100ms ease-out;
+  --transition-normal: 150ms ease-out;
+
   --row-height: 32px;
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--bg);
   color: var(--text);
+}
+
+/* Global transitions for interactive elements */
+button,
+input,
+.field-row,
+.log-row,
+.property-row,
+.property-value,
+.icon-button,
+.header-cell,
+.resize-handle,
+.panel-resize-handle {
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 * {
@@ -69,7 +116,8 @@ button {
   min-height: 52px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
-  background: var(--bg);
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
 }
 
 .filter-input-wrap,
@@ -80,8 +128,13 @@ button {
   gap: 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--bg);
+  background: var(--panel-elevated);
   color: var(--muted);
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color var(--transition-normal),
+    box-shadow var(--transition-normal),
+    background-color var(--transition-normal);
 }
 
 .filter-input-wrap {
@@ -104,12 +157,13 @@ button {
 .sidebar-search:focus-within,
 .detail-search:focus-within {
   border-color: var(--blue);
-  box-shadow: 0 0 0 2px rgba(9, 105, 218, 0.12);
+  box-shadow: var(--shadow-focus);
+  background: var(--bg);
 }
 
 .filter-input-wrap:has(input.error) {
   border-color: var(--red);
-  box-shadow: 0 0 0 2px rgba(207, 34, 46, 0.12);
+  box-shadow: 0 0 0 3px rgba(207, 34, 46, 0.1);
 }
 
 .filter-status {
@@ -125,11 +179,22 @@ button {
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: #1a7f37;
+  background: var(--green);
+  transition: background-color var(--transition-normal);
+}
+
+.connection-dot:not(.offline) {
+  animation: pulse 2s ease-in-out infinite;
 }
 
 .connection-dot.offline {
   background: var(--orange);
+  animation: none;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
 
 .filter-error {
@@ -141,9 +206,22 @@ button {
   padding: 6px 10px;
   border: 1px solid rgba(207, 34, 46, 0.25);
   border-radius: 6px;
-  background: #ffebe9;
+  background: var(--red-light);
   color: var(--red);
   font-size: 13px;
+  box-shadow: var(--shadow-md);
+  animation: slideIn 0.15s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .workspace {
@@ -168,7 +246,7 @@ button {
   position: relative;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--border);
+  box-shadow: inset -1px 0 0 var(--border);
 }
 
 .panel-header {
@@ -179,6 +257,7 @@ button {
   border-bottom: 1px solid var(--border);
   font-weight: 600;
   font-size: 14px;
+  letter-spacing: -0.01em;
 }
 
 .sidebar-search,
@@ -195,10 +274,10 @@ button {
 
 .field-group-label {
   padding: 12px 6px 5px;
-  color: var(--muted);
+  color: var(--text-secondary);
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
 }
 
@@ -217,6 +296,12 @@ button {
 
 .field-row:hover {
   background: var(--hover);
+  transform: translateX(2px);
+}
+
+.field-row:active {
+  transform: translateX(0);
+  background: var(--hover-subtle);
 }
 
 .field-row span {
@@ -225,10 +310,38 @@ button {
   white-space: nowrap;
 }
 
-.field-row input {
-  width: 14px;
-  height: 14px;
+.field-row input[type="checkbox"] {
+  appearance: none;
+  width: 16px;
+  height: 16px;
   margin: 0;
+  border: 1.5px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.field-row input[type="checkbox"]:hover {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px var(--blue-muted);
+}
+
+.field-row input[type="checkbox"]:checked {
+  background: var(--blue);
+  border-color: var(--blue);
+  background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3e%3c/svg%3e");
+  background-size: 12px;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.field-row input[type="checkbox"]:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
 
 .empty-panel,
@@ -266,6 +379,9 @@ button {
   border-bottom: 1px solid var(--border);
   background: var(--panel);
   color: var(--text);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  z-index: 1;
 }
 
 .header-cell {
@@ -281,11 +397,15 @@ button {
   user-select: none;
 }
 
+.header-cell:hover {
+  background: var(--hover-subtle);
+}
+
 .header-cell.dragging {
-  background: #ddf4ff;
-  box-shadow: inset 0 0 0 1px rgba(9, 105, 218, 0.3);
+  background: var(--blue-light);
+  box-shadow: inset 0 0 0 1px var(--selected-border);
   cursor: grabbing;
-  opacity: 0.85;
+  opacity: 0.9;
 }
 
 .header-cell span {
@@ -311,10 +431,19 @@ button {
   background: transparent;
   cursor: col-resize;
   touch-action: none;
+  opacity: 0;
+  transition:
+    opacity var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.header-cell:hover .resize-handle,
+.resize-handle:focus-visible {
+  opacity: 1;
 }
 
 .resize-handle:hover {
-  background: rgba(9, 105, 218, 0.16);
+  background: rgba(9, 105, 218, 0.2);
 }
 
 .resize-handle:focus-visible {
@@ -346,7 +475,7 @@ button {
   display: grid;
   height: var(--row-height);
   border-left: 3px solid transparent;
-  border-bottom: 1px solid #eef1f4;
+  border-bottom: 1px solid var(--border-subtle);
   color: var(--text);
   cursor: default;
   outline: none;
@@ -354,11 +483,14 @@ button {
 
 .log-row:hover {
   background: var(--hover);
+  box-shadow: inset 3px 0 0 var(--border);
 }
 
 .log-row.selected {
   background: var(--selected);
-  box-shadow: inset 0 0 0 1px rgba(9, 105, 218, 0.2);
+  box-shadow:
+    inset 3px 0 0 var(--blue),
+    inset 0 0 0 1px var(--selected-border);
 }
 
 .log-row.tone-error {
@@ -385,7 +517,7 @@ button {
   min-width: 0;
   overflow: hidden;
   padding: 7px 9px;
-  border-right: 1px solid #eef1f4;
+  border-right: 1px solid var(--border-subtle);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   font-size: 12px;
   line-height: 17px;
@@ -410,23 +542,36 @@ button {
   padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--bg);
+  background: var(--panel-elevated);
   color: var(--blue);
-  box-shadow: 0 8px 24px rgba(31, 35, 40, 0.12);
+  box-shadow: var(--shadow-lg);
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
+  transition:
+    background-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .jump-to-bottom:hover {
-  background: var(--hover);
+  background: var(--bg);
+  box-shadow:
+    var(--shadow-lg),
+    0 0 0 2px var(--blue-muted);
+  transform: translateY(-1px);
+}
+
+.jump-to-bottom:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-md);
 }
 
 .detail-panel {
   position: relative;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--border);
+  box-shadow: inset 1px 0 0 var(--border);
 }
 
 .panel-resize-handle {
@@ -436,6 +581,10 @@ button {
   height: 100%;
   cursor: col-resize;
   z-index: 10;
+  opacity: 0;
+  transition:
+    background-color var(--transition-fast),
+    opacity var(--transition-fast);
 }
 
 .panel-resize-handle.left {
@@ -446,9 +595,16 @@ button {
   left: -3px;
 }
 
+.field-selector:hover .panel-resize-handle,
+.detail-panel:hover .panel-resize-handle,
+.panel-resize-handle:hover {
+  opacity: 1;
+}
+
 .panel-resize-handle:hover,
 body.is-resizing-panel .panel-resize-handle {
-  background: rgba(9, 105, 218, 0.2);
+  background: var(--blue);
+  opacity: 0.3;
 }
 
 .detail-header {
@@ -464,6 +620,7 @@ body.is-resizing-panel .panel-resize-handle {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .icon-button {
@@ -481,8 +638,19 @@ body.is-resizing-panel .panel-resize-handle {
 
 .icon-button:hover {
   border-color: var(--border);
-  background: var(--bg);
+  background: var(--panel-elevated);
   color: var(--text);
+  transform: scale(1.05);
+}
+
+.icon-button:active {
+  transform: scale(0.98);
+  background: var(--hover);
+}
+
+.icon-button:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
 
 .icon-button.tiny {
@@ -526,13 +694,18 @@ body.is-resizing-panel .panel-resize-handle {
 .property-row {
   min-height: 34px;
   padding: 5px 0;
-  border-bottom: 1px solid #eaeef2;
+  border-bottom: 1px solid var(--border-subtle);
   align-items: start;
+  border-radius: 4px;
+}
+
+.property-row:hover {
+  background: var(--hover-subtle);
 }
 
 .property-name {
   overflow: hidden;
-  color: var(--muted);
+  color: var(--text-secondary);
   font-size: 12px;
   line-height: 24px;
   text-overflow: ellipsis;
@@ -569,6 +742,11 @@ body.is-resizing-panel .panel-resize-handle {
 .property-value:hover {
   border-color: var(--border);
   background: var(--bg);
+  box-shadow: var(--shadow-sm);
+}
+
+.property-value:active {
+  background: var(--hover);
 }
 
 .property-value.complex,
@@ -587,6 +765,18 @@ body.is-resizing-panel .panel-resize-handle {
   background: var(--text);
   color: var(--bg);
   font-size: 11px;
+  animation: fadeInUp 0.15s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (max-width: 1100px) {
@@ -605,6 +795,43 @@ body.is-resizing-panel .panel-resize-handle {
     right: 0;
     bottom: 0;
     width: min(var(--detail-panel-width, 400px), calc(100vw - var(--field-selector-width, 220px)));
-    box-shadow: -12px 0 28px rgba(31, 35, 40, 0.12);
+    box-shadow:
+      -12px 0 32px rgba(31, 35, 40, 0.15),
+      -4px 0 8px rgba(31, 35, 40, 0.08);
+    animation: slideInFromRight 0.2s ease-out;
   }
+}
+
+@keyframes slideInFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Focus visible for keyboard navigation */
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
