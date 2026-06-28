@@ -23,9 +23,11 @@ type Hub struct {
 }
 
 type Client struct {
-	hub  *Hub
-	conn *websocket.Conn
-	send chan []byte
+	hub       *Hub
+	conn      *websocket.Conn
+	send      chan []byte
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 func NewHub() *Hub {
@@ -51,14 +53,19 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, fields []string, l
 	client := &Client{
 		hub:  h,
 		conn: conn,
-		send: make(chan []byte, 512),
+		send: make(chan []byte, 1024),
+		done: make(chan struct{}),
 	}
 	h.add(client)
 
 	go client.writePump()
-	client.queueFields(fields)
-	for _, line := range lines {
-		client.queueLine(line)
+	if !client.sendFields(fields) {
+		return
+	}
+	for i := range lines {
+		if !client.sendLine(lines[i]) {
+			return
+		}
 	}
 	client.readPump()
 }
@@ -92,8 +99,14 @@ func (h *Hub) remove(client *Client) {
 	defer h.mu.Unlock()
 	if _, ok := h.clients[client]; ok {
 		delete(h.clients, client)
-		close(client.send)
+		client.close()
 	}
+}
+
+func (c *Client) close() {
+	c.closeOnce.Do(func() {
+		close(c.done)
+	})
 }
 
 func (h *Hub) broadcast(msg []byte) {
@@ -106,6 +119,7 @@ func (h *Hub) broadcast(msg []byte) {
 
 	for _, client := range clients {
 		select {
+		case <-client.done:
 		case client.send <- msg:
 		default:
 			h.remove(client)
@@ -114,30 +128,30 @@ func (h *Hub) broadcast(msg []byte) {
 	}
 }
 
-func (c *Client) queueFields(fields []string) {
+func (c *Client) sendFields(fields []string) bool {
 	msg, err := json.Marshal(wsMessage{Type: "fields", Fields: fields})
 	if err != nil {
 		log.Printf("marshal initial fields failed: %v", err)
-		return
+		return true
 	}
-	c.queue(msg)
+	return c.sendMessage(msg)
 }
 
-func (c *Client) queueLine(line LogLine) {
+func (c *Client) sendLine(line LogLine) bool {
 	msg, err := json.Marshal(wsMessage{Type: "line", Line: &line})
 	if err != nil {
 		log.Printf("marshal initial line failed: %v", err)
-		return
+		return true
 	}
-	c.queue(msg)
+	return c.sendMessage(msg)
 }
 
-func (c *Client) queue(msg []byte) {
+func (c *Client) sendMessage(msg []byte) bool {
 	select {
 	case c.send <- msg:
-	default:
-		c.hub.remove(c)
-		_ = c.conn.Close()
+		return true
+	case <-c.done:
+		return false
 	}
 }
 
@@ -165,17 +179,14 @@ func (c *Client) writePump() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer func() {
 		ticker.Stop()
+		c.hub.remove(c)
 		_ = c.conn.Close()
 	}()
 
 	for {
 		select {
-		case msg, ok := <-c.send:
+		case msg := <-c.send:
 			_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if !ok {
-				_ = c.conn.WriteMessage(websocket.CloseMessage, nil)
-				return
-			}
 			if err := c.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
 				return
 			}
@@ -184,6 +195,10 @@ func (c *Client) writePump() {
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
+		case <-c.done:
+			_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			_ = c.conn.WriteMessage(websocket.CloseMessage, nil)
+			return
 		}
 	}
 }

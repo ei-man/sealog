@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { LogLine } from '../lib/types';
-  import { formatCellValue, levelTone, valueToText } from '../lib/utils';
+  import { formatCellValue, isLevelField, levelTone, levelToneFromValue, MESSAGE_FIELDS, TIMESTAMP_FIELDS, valueToText } from '../lib/utils';
 
   let {
     line,
@@ -20,6 +20,13 @@
 
   const tone = $derived(levelTone(line));
   const rawText = $derived(valueToText(line.fields.raw));
+
+  function cellClass(field: string): string {
+    if (MESSAGE_FIELDS.has(field)) return 'log-cell message-cell';
+    if (TIMESTAMP_FIELDS.has(field)) return 'log-cell meta-cell timestamp-cell';
+    if (isLevelField(field)) return 'log-cell level-cell';
+    return 'log-cell meta-cell';
+  }
 
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -43,7 +50,13 @@
   {:else if fields.length}
     {#each fields as field (field)}
       {@const value = formatCellValue(line.fields[field], field, includeDate)}
-      <div class="log-cell" title={value}>{value}</div>
+      <div class={cellClass(field)} title={value}>
+        {#if isLevelField(field) && value}
+          <span class={`level-badge badge-${levelToneFromValue(line.fields[field])}`}>{value}</span>
+        {:else}
+          {value}
+        {/if}
+      </div>
     {/each}
   {:else}
     <div class="log-cell empty-row"></div>

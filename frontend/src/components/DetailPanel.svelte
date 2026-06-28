@@ -91,14 +91,14 @@
           >
             {displayValue(value, field)}
           </button>
-          <button class="icon-button tiny" type="button" aria-label={`Copy ${field}`} onclick={() => copyValue(field, value)}>
+          <button class="icon-button tiny property-action" type="button" aria-label={`Copy ${field}`} onclick={() => copyValue(field, value)}>
             {#if copiedField === field}
               <Check size={14} aria-hidden="true" />
             {:else}
               <Copy size={14} aria-hidden="true" />
             {/if}
           </button>
-          <button class="icon-button tiny" type="button" aria-label={`Filter by ${field}`} onclick={() => onFilter(field, value)}>
+          <button class="icon-button tiny property-action" type="button" aria-label={`Filter by ${field}`} onclick={() => onFilter(field, value)}>
             <Filter size={14} aria-hidden="true" />
           </button>
           {#if copiedField === field}

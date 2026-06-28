@@ -2,6 +2,9 @@ import type { LogLine } from './types';
 
 export const TIMESTAMP_FIELDS = new Set(['timestamp', '@t', 'Timestamp', 'time', 'Time']);
 export const LEVEL_FIELDS = ['level', 'Level', 'severity', 'LogLevel', '@l'];
+export const MESSAGE_FIELDS = new Set(['message', 'Message', '@m', 'msg']);
+
+export type LevelTone = 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'none';
 
 export function valueToText(value: unknown): string {
   if (value === null || value === undefined) return '';
@@ -69,22 +72,31 @@ export function timestampsSpanMultipleDays(lines: LogLine[]): boolean {
   return false;
 }
 
-export function levelTone(line: LogLine): 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'none' {
+export function isLevelField(field: string): boolean {
+  return LEVEL_FIELDS.includes(field);
+}
+
+export function levelToneFromValue(value: unknown): LevelTone {
+  const text = valueToText(value).toLocaleLowerCase();
+  if (!text) return 'none';
+  if (['error', 'fatal', 'critical'].some((level) => text.includes(level))) return 'error';
+  if (text.includes('warn')) return 'warn';
+  if (text === 'info' || text === 'information' || text.includes('info')) return 'info';
+  if (text.includes('debug')) return 'debug';
+  if (text.includes('trace') || text.includes('verbose')) return 'trace';
+  return 'none';
+}
+
+export function levelTone(line: LogLine): LevelTone {
   let value = '';
   for (const field of LEVEL_FIELDS) {
     if (Object.prototype.hasOwnProperty.call(line.fields, field)) {
-      value = valueToText(line.fields[field]).toLocaleLowerCase();
+      value = valueToText(line.fields[field]);
       break;
     }
   }
 
-  if (!value) return 'none';
-  if (['error', 'fatal', 'critical'].some((level) => value.includes(level))) return 'error';
-  if (value.includes('warn')) return 'warn';
-  if (value === 'info' || value === 'information' || value.includes('info')) return 'info';
-  if (value.includes('debug')) return 'debug';
-  if (value.includes('trace') || value.includes('verbose')) return 'trace';
-  return 'none';
+  return levelToneFromValue(value);
 }
 
 export function quoteFilterValue(value: unknown): string {
