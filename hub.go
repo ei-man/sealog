@@ -11,15 +11,33 @@ import (
 )
 
 type wsMessage struct {
-	Type   string   `json:"type"`
-	Line   *LogLine `json:"line,omitempty"`
-	Fields []string `json:"fields,omitempty"`
+	Type       string          `json:"type"`
+	Line       *LogLine        `json:"line,omitempty"`
+	Fields     []string        `json:"fields,omitempty"`
+	Source     *SourceState    `json:"source,omitempty"`
+	TimeRange  *TimeRange      `json:"timeRange,omitempty"`
+	Error      *QueryError     `json:"error,omitempty"`
+	Resources  []AzureResource `json:"resources,omitempty"`
+	AzureError string          `json:"errorMessage,omitempty"`
+	Loading    *LoadingState   `json:"loading,omitempty"`
+	Total      *int            `json:"total,omitempty"`
 }
 
+type clientCommand struct {
+	Type       string     `json:"type"`
+	Query      string     `json:"query,omitempty"`
+	Source     string     `json:"source,omitempty"`
+	TimeRange  *TimeRange `json:"timeRange,omitempty"`
+	ResourceID string     `json:"resourceId,omitempty"`
+}
+
+type CommandHandler func(*Client, clientCommand)
+
 type Hub struct {
-	mu       sync.RWMutex
-	clients  map[*Client]struct{}
-	upgrader websocket.Upgrader
+	mu            sync.RWMutex
+	clients       map[*Client]struct{}
+	handleCommand CommandHandler
+	upgrader      websocket.Upgrader
 }
 
 type Client struct {
@@ -30,12 +48,13 @@ type Client struct {
 	closeOnce sync.Once
 }
 
-func NewHub() *Hub {
+func NewHub(handleCommand CommandHandler) *Hub {
 	return &Hub{
-		clients: make(map[*Client]struct{}),
+		clients:       make(map[*Client]struct{}),
+		handleCommand: handleCommand,
 		upgrader: websocket.Upgrader{
-			ReadBufferSize:  1024,
-			WriteBufferSize: 1024,
+			ReadBufferSize:  4096,
+			WriteBufferSize: 4096,
 			CheckOrigin: func(r *http.Request) bool {
 				return true
 			},
@@ -43,7 +62,7 @@ func NewHub() *Hub {
 	}
 }
 
-func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, fields []string, lines []LogLine) {
+func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, snapshot ServerSnapshot) {
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("websocket upgrade failed: %v", err)
@@ -53,39 +72,52 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, fields []string, l
 	client := &Client{
 		hub:  h,
 		conn: conn,
-		send: make(chan []byte, 1024),
+		send: make(chan []byte, 4096),
 		done: make(chan struct{}),
 	}
 	h.add(client)
 
 	go client.writePump()
-	if !client.sendFields(fields) {
+	if !client.sendSnapshot(snapshot) {
 		return
-	}
-	for i := range lines {
-		if !client.sendLine(lines[i]) {
-			return
-		}
 	}
 	client.readPump()
 }
 
 func (h *Hub) BroadcastLine(line LogLine) {
-	msg, err := json.Marshal(wsMessage{Type: "line", Line: &line})
-	if err != nil {
-		log.Printf("marshal line message failed: %v", err)
-		return
-	}
-	h.broadcast(msg)
+	h.broadcastJSON(wsMessage{Type: "line", Line: &line})
 }
 
 func (h *Hub) BroadcastFields(fields []string) {
-	msg, err := json.Marshal(wsMessage{Type: "fields", Fields: fields})
-	if err != nil {
-		log.Printf("marshal fields message failed: %v", err)
-		return
-	}
-	h.broadcast(msg)
+	h.broadcastJSON(wsMessage{Type: "fields", Fields: fields})
+}
+
+func (h *Hub) BroadcastSource(source SourceState) {
+	h.broadcastJSON(wsMessage{Type: "source", Source: &source})
+}
+
+func (h *Hub) BroadcastTimeRange(timeRange TimeRange) {
+	h.broadcastJSON(wsMessage{Type: "timeRange", TimeRange: &timeRange})
+}
+
+func (h *Hub) BroadcastResultsReset(total int) {
+	h.broadcastJSON(wsMessage{Type: "results.reset", Total: &total})
+}
+
+func (h *Hub) BroadcastResultsStats(total int) {
+	h.broadcastJSON(wsMessage{Type: "results.stats", Total: &total})
+}
+
+func (h *Hub) BroadcastQueryError(queryError QueryError) {
+	h.broadcastJSON(wsMessage{Type: "query.error", Error: &queryError})
+}
+
+func (h *Hub) BroadcastAzureResources(resources []AzureResource, errorMessage string) {
+	h.broadcastJSON(wsMessage{Type: "azure.resources", Resources: resources, AzureError: errorMessage})
+}
+
+func (h *Hub) BroadcastLoading(loading LoadingState) {
+	h.broadcastJSON(wsMessage{Type: "loading", Loading: &loading})
 }
 
 func (h *Hub) add(client *Client) {
@@ -109,6 +141,15 @@ func (c *Client) close() {
 	})
 }
 
+func (h *Hub) broadcastJSON(message wsMessage) {
+	data, err := json.Marshal(message)
+	if err != nil {
+		log.Printf("marshal websocket message failed: %v", err)
+		return
+	}
+	h.broadcast(data)
+}
+
 func (h *Hub) broadcast(msg []byte) {
 	h.mu.RLock()
 	clients := make([]*Client, 0, len(h.clients))
@@ -128,19 +169,41 @@ func (h *Hub) broadcast(msg []byte) {
 	}
 }
 
-func (c *Client) sendFields(fields []string) bool {
-	msg, err := json.Marshal(wsMessage{Type: "fields", Fields: fields})
-	if err != nil {
-		log.Printf("marshal initial fields failed: %v", err)
-		return true
+func (c *Client) sendSnapshot(snapshot ServerSnapshot) bool {
+	if !c.sendJSON(wsMessage{Type: "source", Source: &snapshot.Source}) {
+		return false
 	}
-	return c.sendMessage(msg)
+	if !c.sendJSON(wsMessage{Type: "timeRange", TimeRange: &snapshot.TimeRange}) {
+		return false
+	}
+	if snapshot.Loading.Active {
+		if !c.sendJSON(wsMessage{Type: "loading", Loading: &snapshot.Loading}) {
+			return false
+		}
+	}
+	if len(snapshot.AzureResources) > 0 || snapshot.AzureError != "" {
+		if !c.sendJSON(wsMessage{Type: "azure.resources", Resources: snapshot.AzureResources, AzureError: snapshot.AzureError}) {
+			return false
+		}
+	}
+	if !c.sendJSON(wsMessage{Type: "fields", Fields: snapshot.Fields}) {
+		return false
+	}
+	if !c.sendJSON(wsMessage{Type: "results.reset", Total: &snapshot.Total}) {
+		return false
+	}
+	for i := range snapshot.Lines {
+		if !c.sendJSON(wsMessage{Type: "line", Line: &snapshot.Lines[i]}) {
+			return false
+		}
+	}
+	return true
 }
 
-func (c *Client) sendLine(line LogLine) bool {
-	msg, err := json.Marshal(wsMessage{Type: "line", Line: &line})
+func (c *Client) sendJSON(message wsMessage) bool {
+	msg, err := json.Marshal(message)
 	if err != nil {
-		log.Printf("marshal initial line failed: %v", err)
+		log.Printf("marshal websocket message failed: %v", err)
 		return true
 	}
 	return c.sendMessage(msg)
@@ -161,7 +224,7 @@ func (c *Client) readPump() {
 		_ = c.conn.Close()
 	}()
 
-	c.conn.SetReadLimit(1024)
+	c.conn.SetReadLimit(64 * 1024)
 	_ = c.conn.SetReadDeadline(time.Now().Add(70 * time.Second))
 	c.conn.SetPongHandler(func(string) error {
 		_ = c.conn.SetReadDeadline(time.Now().Add(70 * time.Second))
@@ -169,8 +232,17 @@ func (c *Client) readPump() {
 	})
 
 	for {
-		if _, _, err := c.conn.NextReader(); err != nil {
+		_, data, err := c.conn.ReadMessage()
+		if err != nil {
 			return
+		}
+		var command clientCommand
+		if err := json.Unmarshal(data, &command); err != nil {
+			log.Printf("invalid websocket command: %v", err)
+			continue
+		}
+		if c.hub.handleCommand != nil {
+			c.hub.handleCommand(c, command)
 		}
 	}
 }

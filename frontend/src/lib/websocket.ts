@@ -1,11 +1,17 @@
 import { logs } from './stores/logs.svelte';
-import type { ServerMessage } from './types';
+import type { ClientCommand, ServerMessage } from './types';
 
-export function connectLogs(): () => void {
+export type LogConnection = {
+  send: (command: ClientCommand) => void;
+  disconnect: () => void;
+};
+
+export function connectLogs(): LogConnection {
   let socket: WebSocket | null = null;
   let reconnectTimer: number | null = null;
   let attempts = 0;
   let stopped = false;
+  const pending: ClientCommand[] = [];
 
   function clearReconnectTimer() {
     if (reconnectTimer !== null) {
@@ -28,8 +34,10 @@ export function connectLogs(): () => void {
 
     socket.addEventListener('open', () => {
       attempts = 0;
-      logs.beginSnapshot();
       logs.setConnected(true);
+      while (pending.length && socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify(pending.shift()));
+      }
     });
 
     socket.addEventListener('message', (event) => {
@@ -38,6 +46,21 @@ export function connectLogs(): () => void {
         logs.setFields(message.fields);
       } else if (message.type === 'line') {
         logs.addLine(message.line);
+      } else if (message.type === 'source') {
+        logs.setSource(message.source);
+      } else if (message.type === 'timeRange') {
+        logs.setTimeRange(message.timeRange);
+      } else if (message.type === 'results.reset') {
+        logs.resetResults(message.total);
+      } else if (message.type === 'results.stats') {
+        logs.setTotal(message.total);
+      } else if (message.type === 'query.error') {
+        const position = message.error.position >= 0 ? ` at position ${message.error.position + 1}` : '';
+        logs.setQueryError(`${message.error.message}${position}`);
+      } else if (message.type === 'azure.resources') {
+        logs.setAzureResources(message.resources, message.errorMessage ?? '');
+      } else if (message.type === 'loading') {
+        logs.setLoading(message.loading);
       }
     });
 
@@ -53,9 +76,20 @@ export function connectLogs(): () => void {
 
   connect();
 
-  return () => {
-    stopped = true;
-    clearReconnectTimer();
-    socket?.close();
+  function send(command: ClientCommand) {
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(command));
+      return;
+    }
+    pending.push(command);
+  }
+
+  return {
+    send,
+    disconnect: () => {
+      stopped = true;
+      clearReconnectTimer();
+      socket?.close();
+    }
   };
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"embed"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -16,6 +15,7 @@ import (
 	"runtime"
 	"sort"
 	"sync"
+	"time"
 )
 
 //go:embed frontend/dist/*
@@ -40,16 +40,12 @@ func NewRingBuffer(maxLines int) *RingBuffer {
 	}
 }
 
-func (b *RingBuffer) Add(fields map[string]any, raw bool) (LogLine, bool, []string) {
+func (b *RingBuffer) Add(fields map[string]any, raw bool, ingestedAt time.Time) (LogLine, bool, []string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	b.nextID++
-	line := LogLine{
-		ID:     b.nextID,
-		Fields: cloneFields(fields),
-		Raw:    raw,
-	}
+	line := NewLogLine(b.nextID, fields, raw, ingestedAt)
 
 	index := (b.start + b.count) % len(b.lines)
 	if b.count == len(b.lines) {
@@ -61,7 +57,7 @@ func (b *RingBuffer) Add(fields map[string]any, raw bool) (LogLine, bool, []stri
 	b.lines[index] = line
 
 	changed := false
-	for field := range fields {
+	for field := range line.FlatFields {
 		if _, ok := b.fields[field]; !ok {
 			b.fields[field] = struct{}{}
 			changed = true
@@ -79,10 +75,15 @@ func (b *RingBuffer) Lines() []LogLine {
 	for i := 0; i < b.count; i++ {
 		index := (b.start + i) % len(b.lines)
 		line := b.lines[index]
-		line.Fields = cloneFields(line.Fields)
-		lines = append(lines, line)
+		lines = append(lines, CloneLogLine(line))
 	}
 	return lines
+}
+
+func (b *RingBuffer) Len() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.count
 }
 
 func (b *RingBuffer) Fields() []string {
@@ -117,12 +118,12 @@ func main() {
 	port := flag.Int("port", 7100, "HTTP server port")
 	noOpen := flag.Bool("no-open", false, "suppress auto-opening browser")
 	maxLines := flag.Int("max-lines", 50000, "max lines to keep in memory")
+	appInsights := flag.Bool("app-insights", false, "use Azure Application Insights traces via Azure CLI credentials")
 	flag.Parse()
 
-	buffer := NewRingBuffer(*maxLines)
-	hub := NewHub()
+	app := NewApp(*maxLines, *appInsights)
 
-	mux, err := newHTTPMux(buffer, hub)
+	mux, err := newHTTPMux(app)
 	if err != nil {
 		log.Fatalf("failed to initialize embedded frontend: %v", err)
 	}
@@ -140,7 +141,9 @@ func main() {
 	url := fmt.Sprintf("http://localhost:%d", actualPort)
 	fmt.Printf("Sealog listening on %s\n", url)
 
-	go readStdin(buffer, hub)
+	if !*appInsights {
+		go readStdin(app)
+	}
 
 	if !*noOpen {
 		go func() {
@@ -159,7 +162,7 @@ func main() {
 	}
 }
 
-func newHTTPMux(buffer *RingBuffer, hub *Hub) (*http.ServeMux, error) {
+func newHTTPMux(app *App) (*http.ServeMux, error) {
 	dist, err := fs.Sub(embeddedFiles, "frontend/dist")
 	if err != nil {
 		return nil, err
@@ -171,22 +174,12 @@ func newHTTPMux(buffer *RingBuffer, hub *Hub) (*http.ServeMux, error) {
 		w.Header().Set("Cache-Control", "no-store")
 		fileServer.ServeHTTP(w, r)
 	}))
-	mux.HandleFunc("/api/fields", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(buffer.Fields()); err != nil {
-			log.Printf("encode fields failed: %v", err)
-		}
-	})
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		hub.ServeWS(w, r, buffer.Fields(), buffer.Lines())
+		app.ServeWS(w, r)
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -206,17 +199,13 @@ func newHTTPMux(buffer *RingBuffer, hub *Hub) (*http.ServeMux, error) {
 	return mux, nil
 }
 
-func readStdin(buffer *RingBuffer, hub *Hub) {
+func readStdin(app *App) {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
 
 	for scanner.Scan() {
 		fields, raw := ParseLine(scanner.Text())
-		line, fieldsChanged, allFields := buffer.Add(fields, raw)
-		hub.BroadcastLine(line)
-		if fieldsChanged {
-			hub.BroadcastFields(allFields)
-		}
+		app.AddStdin(fields, raw)
 	}
 
 	if err := scanner.Err(); err != nil {

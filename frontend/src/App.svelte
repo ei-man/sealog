@@ -4,22 +4,20 @@
   import FieldSelector from './components/FieldSelector.svelte';
   import LogTable from './components/LogTable.svelte';
   import DetailPanel from './components/DetailPanel.svelte';
-  import { evaluateFilter } from './lib/filter/evaluator';
-  import { parseQuery, ParseError } from './lib/filter/parser';
   import { logs } from './lib/stores/logs.svelte';
   import { settings } from './lib/stores/settings.svelte';
-  import { connectLogs } from './lib/websocket';
-  import type { AstNode } from './lib/filter/ast';
-  import type { LogLine } from './lib/types';
+  import { connectLogs, type LogConnection } from './lib/websocket';
+  import type { LogLine, TimeRange } from './lib/types';
   import { quoteFilterValue } from './lib/utils';
 
   let filterText = $state('');
-  let filterError = $state('');
-  let activeAst = $state<AstNode | null>(null);
   let selectedLineId = $state<number | null>(null);
   let fieldSelectorWidth = $state(250);
   let detailPanelWidth = $state(400);
   let workspaceEl: HTMLElement | undefined = $state();
+  let connection: LogConnection | null = null;
+  let requestedAzureResources = $state(false);
+  let lastServerQuery = $state('');
 
   const MIN_PANEL_WIDTH = 180;
   const MIN_LOG_TABLE_WIDTH = 300;
@@ -44,10 +42,21 @@
     });
   });
 
-  const filteredLines = $derived.by(() => {
-    const ast = activeAst;
-    if (!ast) return logs.lines;
-    return logs.lines.filter((line) => evaluateFilter(ast, line));
+  $effect(() => {
+    const query = logs.source.query;
+    untrack(() => {
+      if (query !== lastServerQuery) {
+        lastServerQuery = query;
+        filterText = query;
+      }
+    });
+  });
+
+  $effect(() => {
+    if (logs.connected && logs.source.appInsightsEnabled && !requestedAzureResources) {
+      requestedAzureResources = true;
+      connection?.send({ type: 'azure.resources.list' });
+    }
   });
 
   const selectedLine = $derived(
@@ -55,27 +64,8 @@
   );
 
   function applyFilter(nextFilter: string) {
-    const trimmed = nextFilter.trim();
-    if (!trimmed) {
-      filterText = nextFilter;
-      filterError = '';
-      activeAst = null;
-      return;
-    }
-
-    try {
-      activeAst = parseQuery(trimmed);
-      filterText = nextFilter;
-      filterError = '';
-    } catch (error) {
-      if (error instanceof ParseError) {
-        filterError = `${error.message} at position ${error.position + 1}`;
-      } else if (error instanceof Error) {
-        filterError = error.message;
-      } else {
-        filterError = 'Invalid filter';
-      }
-    }
+    filterText = nextFilter;
+    connection?.send({ type: 'query.apply', query: nextFilter });
   }
 
   function selectLine(line: LogLine) {
@@ -94,6 +84,19 @@
     applyFilter(nextFilter);
   }
 
+  function setTimeRange(timeRange: TimeRange) {
+    connection?.send({ type: 'timeRange.set', timeRange });
+  }
+
+  function listAzureResources() {
+    requestedAzureResources = true;
+    connection?.send({ type: 'azure.resources.list' });
+  }
+
+  function selectAzureResource(resourceId: string) {
+    connection?.send({ type: 'azure.resource.select', resourceId });
+  }
+
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape' && selectedLineId !== null) {
       selectedLineId = null;
@@ -101,10 +104,11 @@
   }
 
   onMount(() => {
-    const disconnect = connectLogs();
+    connection = connectLogs();
     window.addEventListener('keydown', handleKeydown);
     return () => {
-      disconnect();
+      connection?.disconnect();
+      connection = null;
       window.removeEventListener('keydown', handleKeydown);
     };
   });
@@ -117,11 +121,19 @@
 <main class="app-shell">
   <FilterBar
     bind:value={filterText}
-    error={filterError}
-    showing={filteredLines.length}
-    total={logs.lines.length}
+    error={logs.queryError}
+    showing={logs.lines.length}
+    total={logs.total}
     connected={logs.connected}
+    source={logs.source}
+    timeRange={logs.timeRange}
+    azureResources={logs.azureResources}
+    azureError={logs.azureError}
+    loading={logs.loading}
     onApply={applyFilter}
+    onTimeRangeChange={setTimeRange}
+    onListResources={listAzureResources}
+    onSelectResource={selectAzureResource}
   />
 
   <section
@@ -133,7 +145,7 @@
   >
     <FieldSelector fields={logs.fields} width={fieldSelectorWidth} onResize={resizeFieldSelector} />
     <LogTable
-      lines={filteredLines}
+      lines={logs.lines}
       selectedLineId={selectedLineId}
       onSelect={selectLine}
     />

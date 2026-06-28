@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Search } from '@lucide/svelte';
+  import { Cloud, RefreshCw, Search } from '@lucide/svelte';
+  import type { AzureResource, LoadingState, SourceState, TimeRange } from '../lib/types';
+  import TimeRangeControl from './TimeRangeControl.svelte';
 
   let {
     value = $bindable(''),
@@ -8,14 +10,30 @@
     showing,
     total,
     connected,
-    onApply
+    source,
+    timeRange,
+    azureResources,
+    azureError,
+    loading,
+    onApply,
+    onTimeRangeChange,
+    onListResources,
+    onSelectResource
   }: {
     value: string;
     error: string;
     showing: number;
     total: number;
     connected: boolean;
+    source: SourceState;
+    timeRange: TimeRange;
+    azureResources: AzureResource[];
+    azureError: string;
+    loading: LoadingState;
     onApply: (value: string) => void;
+    onTimeRangeChange: (timeRange: TimeRange) => void;
+    onListResources: () => void;
+    onSelectResource: (resourceId: string) => void;
   } = $props();
 
   let input: HTMLInputElement;
@@ -32,6 +50,10 @@
       input?.focus();
       input?.select();
     }
+  }
+
+  function resourceLabel(resource: AzureResource): string {
+    return `${resource.subscriptionId} / ${resource.resourceGroup} / ${resource.name}`;
   }
 
   onMount(() => {
@@ -54,12 +76,39 @@
     />
   </div>
 
+  <div class="filter-controls">
+    <TimeRangeControl {timeRange} onChange={onTimeRangeChange} />
+
+    {#if source.appInsightsEnabled}
+      <div class="resource-picker">
+        <Cloud size={15} aria-hidden="true" />
+        <select
+          aria-label="Application Insights resource"
+          value={source.selectedResource?.id ?? ''}
+          onchange={(event) => onSelectResource((event.currentTarget as HTMLSelectElement).value)}
+        >
+          <option value="">Select App Insights</option>
+          {#each azureResources as resource (resource.id)}
+            <option value={resource.id}>{resourceLabel(resource)}</option>
+          {/each}
+        </select>
+        <button class:spinning={loading.active} class="icon-button small" type="button" aria-label="Refresh Application Insights resources" onclick={onListResources}>
+          <RefreshCw size={15} aria-hidden="true" />
+        </button>
+      </div>
+    {/if}
+  </div>
+
   <div class="filter-status">
     <span class:offline={!connected} class="connection-dot" title={connected ? 'Connected' : 'Reconnecting'}></span>
-    <span>showing {showing.toLocaleString()} / {total.toLocaleString()}</span>
+    <span>{loading.active ? loading.message || 'Loading' : `showing ${showing.toLocaleString()} / ${total.toLocaleString()}`}</span>
   </div>
 </header>
 
 {#if error}
   <div id="filter-error" class="filter-error" role="alert">{error}</div>
+{/if}
+
+{#if azureError}
+  <div class="filter-error azure-error" role="alert">{azureError}</div>
 {/if}

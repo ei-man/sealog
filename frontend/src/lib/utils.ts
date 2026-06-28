@@ -1,7 +1,7 @@
 import type { LogLine } from './types';
 
-export const TIMESTAMP_FIELDS = new Set(['timestamp', '@t', 'Timestamp', 'time', 'Time']);
-export const LEVEL_FIELDS = ['level', 'Level', 'severity', 'LogLevel', '@l'];
+export const TIMESTAMP_FIELDS = new Set(['timestamp', '@t', 'Timestamp', 'time', 'Time', 'ingested_at']);
+export const LEVEL_FIELDS = ['level', 'Level', 'severity', 'severityLevel', 'LogLevel', '@l'];
 export const MESSAGE_FIELDS = new Set(['message', 'Message', '@m', 'msg']);
 
 export type LevelTone = 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'none';
@@ -15,6 +15,20 @@ export function valueToText(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+export function getPathValue(fields: Record<string, unknown>, path: string): unknown {
+  if (Object.prototype.hasOwnProperty.call(fields, path)) return fields[path];
+
+  const parts = path.split('.');
+  let current: unknown = fields;
+  for (const part of parts) {
+    if (typeof current !== 'object' || current === null) return undefined;
+    const record = current as Record<string, unknown>;
+    if (!Object.prototype.hasOwnProperty.call(record, part)) return undefined;
+    current = record[part];
+  }
+  return current;
 }
 
 export function formatCellValue(value: unknown, field: string, includeDate: boolean): string {
@@ -61,7 +75,7 @@ export function timestampsSpanMultipleDays(lines: LogLine[]): boolean {
   let firstDay: string | null = null;
   for (const line of lines) {
     for (const field of TIMESTAMP_FIELDS) {
-      const date = parseTimestamp(line.fields[field]);
+      const date = parseTimestamp(getPathValue(line.fields, field));
       if (!date) continue;
       const day = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
       if (!firstDay) firstDay = day;
@@ -90,8 +104,9 @@ export function levelToneFromValue(value: unknown): LevelTone {
 export function levelTone(line: LogLine): LevelTone {
   let value = '';
   for (const field of LEVEL_FIELDS) {
-    if (Object.prototype.hasOwnProperty.call(line.fields, field)) {
-      value = valueToText(line.fields[field]);
+    const fieldValue = getPathValue(line.fields, field);
+    if (fieldValue !== undefined) {
+      value = valueToText(fieldValue);
       break;
     }
   }

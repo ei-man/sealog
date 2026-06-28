@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { LogLine } from '../lib/types';
-  import { formatCellValue, isLevelField, levelTone, levelToneFromValue, MESSAGE_FIELDS, TIMESTAMP_FIELDS, valueToText } from '../lib/utils';
+  import { formatCellValue, getPathValue, isLevelField, levelTone, MESSAGE_FIELDS, TIMESTAMP_FIELDS, valueToText } from '../lib/utils';
 
   let {
     line,
@@ -19,7 +19,7 @@
   } = $props();
 
   const tone = $derived(levelTone(line));
-  const rawText = $derived(valueToText(line.fields.raw));
+  const rawText = $derived(valueToText(getPathValue(line.fields, 'raw')));
 
   function cellClass(field: string): string {
     if (MESSAGE_FIELDS.has(field)) return 'log-cell message-cell';
@@ -49,13 +49,10 @@
     <div class="log-cell raw-cell" title={rawText}>{rawText}</div>
   {:else if fields.length}
     {#each fields as field (field)}
-      {@const value = formatCellValue(line.fields[field], field, includeDate)}
+      {@const fieldValue = getPathValue(line.fields, field)}
+      {@const value = formatCellValue(fieldValue, field, includeDate)}
       <div class={cellClass(field)} title={value}>
-        {#if isLevelField(field) && value}
-          <span class={`level-badge badge-${levelToneFromValue(line.fields[field])}`}>{value}</span>
-        {:else}
-          {value}
-        {/if}
+        {value}
       </div>
     {/each}
   {:else}
