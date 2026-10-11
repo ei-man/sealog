@@ -3,3 +3,4 @@
 /frontend/dist/
 **/bin/
 **/obj/
+__pycache__/

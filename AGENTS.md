@@ -27,6 +27,13 @@ go build -o sealog .
 
 When testing with a live Sealog process, stop the process before finishing the task.
 
+Homebrew setup:
+
+- `Formula/sealog.rb` is a source-build Homebrew formula.
+- This repository doubles as the tap; use `brew tap ei-man/sealog https://github.com/ei-man/sealog`.
+- `.github/workflows/update-homebrew-formula.yml` updates `Formula/sealog.rb` with a tagged source URL and SHA-256 when tags matching `v*` are pushed.
+- The formula keeps `head` support for `brew install --HEAD sealog`.
+
 ## Runtime Modes
 
 - Stdin mode: `some-command | sealog`

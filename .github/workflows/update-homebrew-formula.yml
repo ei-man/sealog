@@ -1,0 +1,55 @@
+name: Update Homebrew Formula
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  update-formula:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Calculate source checksum
+        id: source
+        env:
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          url="https://github.com/${REPOSITORY}/archive/refs/tags/${TAG}.tar.gz"
+          archive="$(mktemp)"
+          curl -fsSL "$url" -o "$archive"
+          sha256="$(sha256sum "$archive" | awk '{print $1}')"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Update formula
+        env:
+          TAG: ${{ github.ref_name }}
+          URL: ${{ steps.source.outputs.url }}
+          SHA256: ${{ steps.source.outputs.sha256 }}
+        run: |
+          python3 .github/scripts/update_homebrew_formula.py "$TAG" "$URL" "$SHA256"
+
+      - name: Commit formula
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- Formula/sealog.rb; then
+            echo "Formula already up to date for ${TAG}"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/sealog.rb
+          git commit -m "Update Homebrew formula for ${TAG}"
+          git push origin main

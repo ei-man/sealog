@@ -26,6 +26,30 @@ az login
 
 Then select an Application Insights resource in the UI.
 
+## Install on macOS
+
+This repository can be used directly as a Homebrew tap:
+
+```bash
+brew tap ei-man/sealog https://github.com/ei-man/sealog
+brew install --HEAD sealog
+```
+
+The formula builds Sealog from source using Homebrew-managed Go and Node.
+
+When a tag like `v0.1.0` is pushed, GitHub Actions updates the formula with the tagged source URL and checksum. After that, regular release installs work:
+
+```bash
+brew install sealog
+```
+
+To cut a release:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
 ## Development
 
 ```bash

@@ -21,6 +21,12 @@ import (
 //go:embed frontend/dist/*
 var embeddedFiles embed.FS
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 type RingBuffer struct {
 	mu     sync.RWMutex
 	lines  []LogLine
@@ -119,7 +125,13 @@ func main() {
 	noOpen := flag.Bool("no-open", false, "suppress auto-opening browser")
 	maxLines := flag.Int("max-lines", 50000, "max lines to keep in memory")
 	appInsights := flag.Bool("app-insights", false, "use Azure Application Insights traces via Azure CLI credentials")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("sealog %s\ncommit: %s\nbuilt: %s\n", version, commit, date)
+		return
+	}
 
 	app := NewApp(*maxLines, *appInsights)
 
